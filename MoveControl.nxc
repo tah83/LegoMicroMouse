@@ -1,0 +1,412 @@
+#ifndef	_MOVECONTROL_NXC_
+#define _MOVECONTROL_NXC_
+
+#include "MotorControl.nxc";
+#include "WallCheck.nxc";
+
+//debug
+#define BREAK_POINT while(1){Off(MOTORS);if(ButtonPressed(BTNRIGHT,false))break;}	
+
+//define movement speed
+#define	MOVE_EXPLORE_SPEED	60
+#define MOVE_RUN_SPEED		80
+#define MOVE_TOP_SPEED		100
+#define MOVE_TURN_SPEED		50
+
+//States for correcting back to Center position in cell
+#define MOVE_STATE_FWD			0
+#define MOVE_STATE_LEFT			1
+#define MOVE_STATE_RIGHT		2
+//#define STATE_DIR_UNKNOWN		3
+
+#define MOVE_USE_LEFT_WALL		1
+#define MOVE_USE_RIGHT_WALL		2
+//#define MOVE_USE_NO_WALL		3
+
+#define MOVE_DIR_LEFT			1 // left 90
+#define MOVE_DIR_RIGHT			2 // right 90
+#define MOVE_DIR_OPPOSITE		3 // turn around 180
+
+//number of rotation count per cell
+#define MOVE_CELL_COUNT		630
+//number of rotation counts to do a direction correction
+#define MOVE_CORRECT_DEG	70
+//number of times to do a direction correction
+#define MOVE_CORRECT_COUNT	3
+
+//byte stateDir = 0;
+byte moveTurnSpeed = MOVE_TURN_SPEED;
+byte moveFwdSpeed = MOVE_RUN_SPEED;
+//bot corrections globals
+//byte stateOffCenter = 0;
+byte moveCorrectionState = 0;
+byte moveState = 0;
+int moveRotCountOffset = 0;
+byte moveCorrectionFactor = 0;
+byte moveCorrectionCount = 0;
+//
+//temps
+//byte tempDistance = 0;
+//int tempCount = 0;
+//byte tempTurnRatio = 0;
+string moveAction = "";
+//string moveAction2 = "";
+
+//initialize cell count to 1st cell
+//byte cellCount = 1;
+
+//functions
+//handles the physicall moving of the bot to the next cell
+//make correction while its moving
+void move_to_next_cell();
+/*print the walls the bot sees to the LCD
+as well as try to draw the bot with arectangle in regard to walls it sees that are in range
+*/
+void move_print_info();
+//void rotate_right();
+//void rotate_left();
+/*rotate the bot lef right or turn around
+accepts commands of MOVE_DIR_LEFT or MOVE_DIR_RIGHT or MOVE_DIR_OPPOSITE
+will try to adjust is self away from walls that are to close, so the bot doesnt hangup on a wall
+*/
+void move_rotate(byte theDir);
+
+/*correct the position of the bot 
+this is called from move_to_next_cell when the bot determines it is off center.
+either to close to left, or right wall, and so needs to correct back to a point where it is not off center
+*/
+void move_correct_position();
+//correct position when at a corner (two walls)
+//or at a dead end (three walls)
+//use distance senosor, walk bot left, then right, try to find position where bot is 90 to wall
+//worked ~80% of the time, but when it screwed up, it made things worse. distance sensors are ocaisonally unreliable
+//void correct_angle(); 
+//void square_up(); 
+//walk the bot, and try to find a position where the bot is close to being 90 degrees with a wall
+//byte find_shortest_distance_right(byte theSide, byte theStartDistance);
+
+
+//move forward and try to correct path if bot gets off center
+void move_to_next_cell(){
+	int theStartRotCount;	
+	//temp holder for the previous rotationCount offset
+	int tempRotCountOffset = MOVE_CELL_COUNT - moveRotCountOffset;
+	bool theFwdCondition = false;
+	
+	motors_reset_all();
+	theStartRotCount = motor_get_rotation_count();
+	while(motor_get_rotation_count() < theStartRotCount + (MOVE_CELL_COUNT - moveRotCountOffset)){
+		//case: bot is within defined range of distance from any wall
+		if(!is_off_center_left() && !is_off_center_right()
+		&& moveCorrectionState == 0 && theFwdCondition == false){
+			moveAction = "forward";
+			moveState = MOVE_STATE_FWD;
+			//fwd_time(moveFwdSpeed,200);
+			OnFwdSync(MOTORS, moveFwdSpeed, 0);
+			theFwdCondition = true;
+			moveCorrectionCount = 0;
+		}
+		//case: bot has drifted to close to wall on left
+		//result: correct to the right
+		else if(is_off_center_left() || (moveState == MOVE_STATE_LEFT && moveCorrectionState > 0)){
+			moveAction = "offLeft ";
+			theFwdCondition = false;
+			//int tempRotations;
+			if(moveCorrectionState == 0){
+				motors_off();
+				moveCorrectionState = 1;
+				moveState = MOVE_STATE_RIGHT;
+				moveCorrectionFactor = get_correction_factor();
+				//theDisplacement = get_displacement();
+				moveCorrectionCount = 0;
+			}
+			move_correct_position();
+		}	
+		//case: bot has drifted to close to wall on right
+		//result: turn step left
+		else if(is_off_center_right() || (moveState == MOVE_STATE_RIGHT && moveCorrectionState > 0)){
+			moveAction = "offRight ";
+			theFwdCondition = false;
+			if(moveCorrectionState == 0){
+				motors_off();
+				moveCorrectionState = 1;
+				moveState = MOVE_STATE_LEFT;
+				moveCorrectionFactor = get_correction_factor();
+				//theDisplacement = get_displacement();
+				moveCorrectionCount = 0;
+			}
+			move_correct_position();
+		}
+		//ClearScreen();
+		//move_print_info();
+		//BREAK_POINT	
+	}
+	//collect extra distance so we know how far offset
+	//extra rotation count accure with position correcting or at higher speeds, motors over shoot rotation count
+	moveRotCountOffset = motor_get_rotation_count() -  tempRotCountOffset;
+	//cellCount++;
+	motors_reset_all();	
+//	ClearScreen();
+//	move_print_info();
+//	Wait(200);
+	//BREAK_POINT
+}
+//calibrate for motors by changing speed in MotorControl motor_correct_deg_left/right or number rotation count here
+void move_correct_position(){
+	//BREAK_POINT;
+	if(moveCorrectionState == 1){
+		if(moveState == MOVE_STATE_LEFT)			
+			motor_correct_deg_left(moveFwdSpeed,moveCorrectionFactor,MOVE_CORRECT_DEG);
+		else if(moveState == MOVE_STATE_RIGHT)
+			motor_correct_deg_right(moveFwdSpeed,moveCorrectionFactor,MOVE_CORRECT_DEG);
+		moveCorrectionCount++;
+		if(moveCorrectionCount == MOVE_CORRECT_COUNT)
+			moveCorrectionState = 2;
+	}
+	if(moveCorrectionState == 2){
+		byte theBackCorrect = 0; 
+		if(moveState == MOVE_STATE_LEFT){
+			theBackCorrect = moveCorrectionCount*(MOVE_CORRECT_DEG - 10); //right and left motors work different
+			motor_correct_deg_right(moveFwdSpeed,moveCorrectionFactor,theBackCorrect);
+		}
+		else if(moveState == MOVE_STATE_RIGHT){
+			theBackCorrect = moveCorrectionCount*(MOVE_CORRECT_DEG - 5);
+			motor_correct_deg_left(moveFwdSpeed,moveCorrectionFactor,theBackCorrect);
+		}
+		moveCorrectionState = 0;
+		moveCorrectionCount = 0;
+		//BREAK_POINT
+	}
+}
+// make a turn left or right or back around
+//accepts commands of MOVE_DIR_LEFT or MOVE_DIR_RIGHT or MOVE_DIR_OPPOSITE
+void move_rotate(byte theDir){
+	moveAction ="rightTurn";
+	byte theCount = 0;
+	byte theWall = 0;
+	bool theCorrectionComplete = false;
+	bool theFrontWallExist = is_wall_front();
+	byte theFrontDistance;
+	byte theSideDistance;
+	//BREAK_POINT;
+	//finish Correcting position
+	while(moveCorrectionState != 0){
+		Wait(20);
+		//move back from wall if to close, before finishing correction
+		if(get_front_distance() < 10)
+			sync_rev_deg(moveTurnSpeed,50);
+		//BREAK_POINT;
+		move_correct_position();
+	}
+	
+		
+	//give it some time to collect new sonar readings
+	Wait(100);
+	motors_off();
+	//try to find a reference wall and keep a distance from it before turning
+	if(theDir == MOVE_DIR_OPPOSITE){
+		if(is_wall_left() && is_wall_right()){
+			if(get_left_distance() < get_right_distance())
+				theWall = MOVE_USE_LEFT_WALL;				
+			else
+				theWall = MOVE_USE_RIGHT_WALL;
+		}
+		else if(is_wall_left())
+			theWall = MOVE_USE_LEFT_WALL;
+		else if(is_wall_right())
+			theWall = MOVE_USE_RIGHT_WALL;
+	}
+	//if bot is turning right, maybe there is a wall left
+	else if(theDir == MOVE_DIR_RIGHT){
+		theWall = MOVE_USE_LEFT_WALL;
+	}
+	//else turnign left, try to use right wall
+	else if(theDir == MOVE_DIR_LEFT){
+		theWall = MOVE_USE_RIGHT_WALL;
+	}
+	// now do move correction and make the turn	
+	while(!theCorrectionComplete){
+		theFrontDistance = get_front_distance();
+		if(theWall == MOVE_USE_RIGHT_WALL)
+			theSideDistance = get_right_distance();
+		else if(theWall == MOVE_USE_LEFT_WALL)
+			theSideDistance = get_left_distance();
+		//to far from target wall
+		//move forward
+		if(theFrontWallExist && theFrontDistance > 13){
+			sync_fwd_deg(moveTurnSpeed,50);
+			theCount = 0;
+			//BREAK_POINT;
+		}
+		//if no front wall. keep bot in same cell while its making corrections
+		//dont let it walk back to far
+		else if(theCount >= 1 && !theFrontWallExist){
+			int theFwdDeg = 120*theCount;
+			sync_fwd_deg(moveTurnSpeed,theFwdDeg);
+			theCount = 0;
+		}
+		//fix position to make the turn
+		//to close to front, or to close to side
+		else if(theFrontDistance < 10 || theSideDistance < 12){			
+			//to close to front wall, go back
+			if(theFrontDistance < 10 && theSideDistance > 12)
+				sync_rev_deg(moveTurnSpeed,30);
+			//to close to side wall, "walk" away from wall
+			else{
+				motors_off();
+				if(/*theDir == MOVE_DIR_LEFT || */theWall == MOVE_USE_RIGHT_WALL){
+					rev_deg_right(moveTurnSpeed,120);
+					motors_off();
+					rev_deg_left(moveTurnSpeed,134);
+				}
+				else if(/*theDir == MOVE_DIR_RIGHT ||*/ theWall == MOVE_USE_LEFT_WALL){
+					rev_deg_left(moveTurnSpeed,120);
+					motors_off();
+					rev_deg_right(moveTurnSpeed,135);
+				}
+				motors_off();
+			}			
+			theCount++;
+		}
+		//conditions are just right, its business time.
+		//make the turn
+		else if(theFrontDistance >=10 && theSideDistance >=12){
+			//pull forward if needed
+			//if(theCount > 0){
+			//	int theFwdDeg = 120*theCount;
+			//	sync_fwd_deg(moveTurnSpeed,theFwdDeg);
+			//	theCount = 0;
+			//	BREAK_POINT;
+			//}
+			motors_off();
+			if(theDir == MOVE_DIR_LEFT)
+				sync_left_90(moveTurnSpeed);
+			else if(theDir == MOVE_DIR_RIGHT)
+				sync_right_90(moveTurnSpeed);
+			else if(theDir == MOVE_DIR_OPPOSITE){
+				if(theWall == MOVE_USE_LEFT_WALL)
+					sync_right_180(moveTurnSpeed);
+				else
+					sync_left_180(moveTurnSpeed);
+			}
+			theCorrectionComplete = true;	
+			motors_off();
+		}
+		//let sensors have a little more time to collect new values
+		Wait(20);
+	}
+	//reset the cell counter after turns. bot should have corrected itself in the cell hopefully
+	moveRotCountOffset = 0;
+	moveCorrectionState = 0;
+	moveState = MOVE_STATE_FWD;
+	//give it some time to collect new sonar reading. 
+	//other wise it will go into correction state with realy high displacement values
+	//using distance values it read while turning
+	Wait(100);
+}
+
+//display bot as a rectangle in the maze with the walls it sees
+//for debuging bot position and correction
+void move_print_info(){
+	/*
+	// if(is_drifting_left())
+	if(prevLeftDist > leftDistance)
+	TextOut(70,LCD_LINE1," <--");
+	//  if(is_drifting_right())
+	if(prevRightDist > rightDistance)
+	TextOut(70,LCD_LINE2," -->");
+	*/
+
+	byte theLeftDistance = get_left_distance();
+	byte theFrontDistance = get_front_distance();
+	byte theRightDistance = get_right_distance();
+	byte theDisplacement = get_displacement();
+	byte theCorrectionFactor = get_correction_factor();
+	byte thePrevLeftDistance = get_prev_left_distance();
+	byte thePrevRightDistance = get_prev_right_distance();
+	byte thePrevFrontDistance = get_front_distance();
+	
+	// initialize some x,y for drawing to lcd
+	// make bot size about 16x16
+	// how to figure out exact position/angle?
+	byte theLeftWall=17, theRightWall=54, theFrontWall = LCD_LINE1;
+	byte theLeftX1=theLeftWall+2,theRightX1 = theRightWall -2;
+	byte theLeftX2=theLeftWall+2,theRightX2 = theRightWall -2;
+	byte theFrontY = theFrontWall-2,theBackY=theFrontWall -18 ;
+	
+	
+	TextOut(0,LCD_LINE5,"L:");
+	NumOut(10,LCD_LINE5,theLeftDistance);
+	TextOut(28,LCD_LINE5,"F:");
+	NumOut(38,LCD_LINE5,theFrontDistance);
+	TextOut(56,LCD_LINE5,"R:");
+	NumOut(66,LCD_LINE5,theRightDistance);
+
+	TextOut(0,LCD_LINE6,moveAction);
+	TextOut(48,LCD_LINE6,"D");
+	NumOut(56,LCD_LINE6,theDisplacement);
+	TextOut(70,LCD_LINE6,"CR");
+	NumOut(86,LCD_LINE6,theCorrectionFactor);
+	
+//	TextOut(0,LCD_LINE7, "C");
+//	NumOut(10, LCD_LINE7, cellCount);
+	TextOut(0,LCD_LINE7, "R");
+	NumOut(8,LCD_LINE7, moveRotCountOffset);
+	
+	//TextOut(0,LCD_LINE7,moveAction2);
+	TextOut(48,LCD_LINE7,"S"); //state
+	NumOut(56,LCD_LINE7,moveCorrectionState);
+	TextOut(66,LCD_LINE7,"C"); //state
+	NumOut(74,LCD_LINE7,moveCorrectionCount);
+//	TextOut(70,LCD_LINE7,"D");
+//	NumOut(78,LCD_LINE7,tempDistance);
+//	TextOut(0,LCD_LINE8,"C");
+//	NumOut(8,LCD_LINE8,tempCount);
+	TextOut(26,LCD_LINE8,"Cr");
+	NumOut(40,LCD_LINE8,moveCorrectionFactor);
+	//print avg distances
+	NumOut(0,LCD_LINE3,thePrevLeftDistance);
+	NumOut(43,LCD_LINE1,thePrevFrontDistance);
+	NumOut(56,LCD_LINE3,thePrevRightDistance);
+	
+
+	if(is_wall_front()){
+		theFrontY = theFrontWall - theFrontDistance;
+		theBackY = theFrontY - 16;
+		NumOut(27,LCD_LINE1,theFrontDistance);
+		//front wall
+		LineOut(17, LCD_LINE1,54, LCD_LINE1, DRAW_OPT_LOGICAL_OR);
+	}
+	if(is_wall_left()){
+		theLeftX1 = theLeftWall + theLeftDistance;
+		theLeftX2 = theLeftWall + thePrevLeftDistance;
+		if(!is_wall_right())
+			theRightX1=theRightX2 = theLeftX1 + 16;
+		NumOut(0,LCD_LINE2,theLeftDistance);
+		//left wall
+		LineOut(17, LCD_LINE1,17, LCD_LINE3, DRAW_OPT_LOGICAL_OR);
+	}
+	if(is_wall_right()){
+		theRightX1 = theRightWall - theRightDistance;
+		theRightX2 = theRightWall - thePrevRightDistance;
+		if(!is_wall_left())
+			theLeftX1=theLeftX2 = theRightX1 - 16;
+		NumOut(56,LCD_LINE2,theRightDistance);
+		//right wall
+		LineOut(54, LCD_LINE1,54, LCD_LINE3, DRAW_OPT_LOGICAL_OR);
+	}
+	//if bot saw any walls, draw them, and trys to draw bots position in maze
+	//makes use of prevDistance to try and draw bots angle to wall
+	if(is_wall_right() || is_wall_left() || is_wall_front()){
+		//left side
+		LineOut(theLeftX1,theFrontY,theLeftX2,theBackY, DRAW_OPT_LOGICAL_OR);
+		//right side
+		LineOut(theRightX1,theFrontY,theRightX2,theBackY, DRAW_OPT_LOGICAL_OR);
+		//front side
+		LineOut(theLeftX1,theFrontY,theRightX1,theFrontY, DRAW_OPT_LOGICAL_OR);
+		//back side
+		LineOut(theLeftX2,theBackY,theRightX2,theBackY, DRAW_OPT_LOGICAL_OR);
+	}
+}
+
+#endif

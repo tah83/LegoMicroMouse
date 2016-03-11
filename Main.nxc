@@ -1,0 +1,201 @@
+#include "WallCheck.nxc";
+//#include "MoveControl.nxc";
+//#include "Maze.nxc";
+#include "BotController.nxc";
+
+
+ //sensors
+#define SONAR_SENSOR_FRONT    SensorUS(IN_1)
+#define SONAR_SENSOR_LEFT     SensorUS(IN_2)
+#define SONAR_SENSOR_RIGHT    SensorUS(IN_3)
+
+#define MAIN_SENSOR_SAMPLE_FREQ      3
+/*function prototype for play tone
+  plays a voice file loaded on the brick "that was easy"
+  this file has to be loaded onto the brick
+*/
+void play_tone();
+
+//ultra Sonic Sensors
+//read values from the 3 sonar sensors all the time.
+//data acquisition time from I2C ultra sonic sensors ~15ms
+//average the values and try to throw bad values
+// 3.28 sensors give erronous results when at >30 angle to wall.
+//need to prevent bot from getting to far of an angle to wall
+task scan_front(){
+ byte theDistance = 0;
+ byte thePrevDistance = 0;
+ byte theCount;
+ int  theSum;
+
+ while(1){
+  theCount = 0;
+  theSum = 0;
+  for (byte i =0; i < MAIN_SENSOR_SAMPLE_FREQ; i++){
+   theDistance = SONAR_SENSOR_FRONT;
+   //set first value. but how do we know its a good one?
+   if(i == 0)
+    thePrevDistance = theDistance;
+   //throw out values above or below some threshold
+   if(theDistance > thePrevDistance - 2 && theDistance < thePrevDistance + 2){
+    thePrevDistance = theDistance;
+    theSum += theDistance;
+    theCount ++;
+    }
+  }
+  if(theCount > 1){
+   theDistance = theSum/theCount;
+   set_front_distance(theDistance);
+  }
+  //set_front_distance(SONAR_SENSOR_FRONT);
+  }
+}
+
+task scan_left(){
+ byte theDistance = 0;
+ byte thePrevDistance = 0;
+ byte theCount;
+ int  theSum;
+ while(1){
+
+  theCount = 0;
+  theSum = 0;
+  for (byte i =0; i < MAIN_SENSOR_SAMPLE_FREQ; i++){
+   theDistance = SONAR_SENSOR_LEFT;
+   //set first value. but how do we know its a good one?
+   if(i == 0)
+    thePrevDistance = theDistance;
+   //throw out values above or below some threshold
+   if(theDistance > thePrevDistance - 2 && theDistance < thePrevDistance + 2){
+    thePrevDistance = theDistance;
+    theSum += theDistance;
+    theCount ++;
+    }
+  }
+  if(theCount > 1){
+   theDistance = theSum/theCount;
+   set_left_distance(theDistance);
+  }
+
+  //set_left_distance(SONAR_SENSOR_LEFT);
+  }
+}
+
+
+task scan_right(){
+ byte theDistance = 0;
+ byte thePrevDistance = 0;
+ byte theCount;
+ int  theSum;
+ while(1){
+
+  theCount = 0;
+  theSum = 0;
+  for (byte i =0; i < MAIN_SENSOR_SAMPLE_FREQ; i++){
+   theDistance = SONAR_SENSOR_RIGHT;
+   //set first value. but how do we know its a good one?
+   if(i == 0)
+    thePrevDistance = theDistance;
+   //throw out values above or below some threshold
+   if(theDistance > thePrevDistance - 2 && theDistance < thePrevDistance + 2){
+    thePrevDistance = theDistance;
+    theSum += theDistance;
+    theCount ++;
+    }
+  }
+  //if it colleceted at least 3 consistent values
+  if(theCount > 1){
+   theDistance = theSum/theCount;
+   set_right_distance(theDistance);
+  }
+
+  //set_right_distance(SONAR_SENSOR_RIGHT);
+  }
+}
+//check/set walls -> flood the maze -> decide next move -> move
+task main_controller()
+{
+ //set speed to use
+ while(1){
+   if(ButtonPressed(BTNRIGHT,false)){
+    moveFwdSpeed = moveFwdSpeed+1;
+   }
+   else if(ButtonPressed(BTNLEFT,false)){
+     moveFwdSpeed = moveFwdSpeed-1;
+    }
+    else if(ButtonPressed(BTNCENTER,false))
+     break;
+   if(moveFwdSpeed >= 100)
+     moveFwdSpeed = 100;
+   ClearScreen();
+   TextOut(0,LCD_LINE1,"Speed:");
+   NumOut(40,LCD_LINE1,moveFwdSpeed);
+   Wait(150);
+  }
+ //wait for sonar to get first distance values
+ //should only need about 75ms
+
+ Wait(150);
+ bot_initialize();
+ while(1)
+ {
+  //have bot move to next cell, change corse if wall blocks path
+  //display wall distance and other debug info
+  //bot_move_test();
+  
+  //navigate the maze, update/check walls in current cell -> find the next best cell, move to it (re-flood if needed)
+  ClearScreen();
+  bot_print_maze();
+  if(!bot_is_at_goal()){
+	bot_update_walls();
+	//bot_flood_maze();//handled in choosing next move
+	bot_move_to_next_cell();
+  }
+  else{
+	//goal was found. make a noise
+	play_tone();
+	//now that we explored the maze, try to run it at top speed
+	moveFwdSpeed = MOVE_TOP_SPEED;
+	bot_change_goal();
+  //set next goal
+	}
+  //while(1){Off(OUT_AB);if(ButtonPressed(BTNRIGHT,false))break;} //break point
+  ClearScreen();
+  bot_print_maze();
+ }
+}
+
+/*continously display to the LCD
+causes crashes need to check use of mutexes/semaphors
+*/
+
+task lcd_display()
+{
+	while(1){
+		ClearScreen();
+		move_print_info();
+		Wait(300);
+		// ClearScreen();
+		// print_bot_info();
+		// Wait(2000);
+	}
+}
+
+void play_tone(){
+     //PlayTone(
+     PlayFile("MS__voice_That .rso");
+     Wait(1200);
+}
+
+task main()
+{
+//initialize ports
+ SetSensorUltrasonic(IN_1);
+ SetSensorUltrasonic(IN_2);
+ SetSensorUltrasonic(IN_3);
+ 
+ //initialize tasks
+ Precedes(scan_front,scan_right,scan_left,main_controller);
+ //Precedes(scan_front,scan_right,scan_left,lcd_display);
+}
+

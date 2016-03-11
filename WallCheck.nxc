@@ -1,0 +1,434 @@
+#ifndef	_WALLCHECK_NXC_
+#define _WALLCHECK_NXC_
+
+//only needed if multiple tasks accessing functions
+mutex fieldMutex;
+mutex displacementMutex;
+mutex correctionFactorMutex;
+mutex leftDistMutex;
+mutex rightDistMutex;
+mutex frontDistMutex;
+
+//define for wall ranges while moving in maze
+//#define WALL_NEAR 12
+//#define WALL_FAR  22
+#define WALL_AT_NEXT_CELL	27
+ //would like to set this lower. but if the bot is at an angle a seemingly close looking wall can be 23+ cm from the sensor
+ //also walls very close, either show up as much greater than they should be, or only as close as 5cm, not usualy below
+ // accuracy +/-3cm 
+ //mabye this can be solved... with placeing the sonar looking left, on the right side of the bot. still looking left, but
+ //attached to the opposite side so it has to look over the width of the bot and
+ //so the sensor would never be closer to the wall then the left side of the bot.
+#define WALL_AT_THIS_CELL	24
+#define WALL_SUM			35 
+
+//wall distance define upper and lower bounds for side view of bot 
+//(left and right sonar distance) for mainting distance from wall
+//#define WALL_SIDE_DIST_UPPER	12
+//#define WALL_SIDE_DIST_LOWER	10
+//
+#define WALL_SIDE_DIST_LOWER	15
+
+//array size for number of sonar samples
+//#define WALL_DIST_SAMPLE_SIZE	5
+#define WALL_DIST_SAMPLE_FREQ	15
+//constant for porportional gain for amplifying correction factor
+#define KP		5
+
+//initialize distance variables
+byte frontDistance, leftDistance, rightDistance;
+//byte avgFrontDist,avgLeftDist,avgRightDist;
+//byte frontDist[WALL_DIST_SAMPLE_SIZE], leftDist[WALL_DIST_SAMPLE_SIZE], rightDist[WALL_DIST_SAMPLE_SIZE];
+byte prevFrontDist,prevLeftDist,prevRightDist;
+byte displacement;
+//declare sets and gets function prototypes
+/*called by tasks controlling the sensors
+store the distance reading to a single variable
+*/
+void set_front_distance(byte theDistance);
+/*called by tasks controlling the sensors
+store the distance reading to a single variable
+*/
+void set_right_distance(byte theDistance);
+/*called by tasks controlling the sensors
+store the distance reading to a single variable
+*/
+void set_left_distance(byte theDistance);
+//
+/*retrun the most recent reading from the front sensor
+*/
+byte get_front_distance();
+/*retrun the most recent reading from the left sensor
+*/
+byte get_left_distance();
+/*retrun the most recent reading from the right sensor
+*/
+byte get_right_distance();
+/*retrun the previous reading from the front sensor
+*/
+byte get_prev_front_distance();
+/*retrun the previous reading from the left sensor
+*/
+byte get_prev_left_distance();
+/*retrun the previous reading from the right sensor
+*/
+byte get_prev_right_distance();
+//displacement check
+/*try and figure out how far off center the bot is using distance reading
+and predifined values. returns the displacement value
+return: byte
+*/
+byte build_displacement();
+/*return the dispalcement amount
+*/
+byte get_displacement();
+/*uses displacement and a porportional gain to build a correction factor
+this is used determning how much to make a movement correction
+if the bot is off center a lot, to close to a wall, then it need to correct by a lot
+if the bot is only a little off, make a small correction
+*/
+byte get_correction_factor();
+
+//declare bool functions
+//check if there is no wall in the next cell on the front
+bool is_front_open();
+//check if there is no wall in the next cell on the right
+bool is_right_open();
+//check if there is no wall in the next cell on the left
+bool is_left_open();
+
+//check if there is a wall left
+bool is_wall_left();
+//check if there is a wall right
+bool is_wall_right();
+//check if there is a wall to the front
+bool is_wall_front();
+//not currently used
+//maybe if previos distance check was tied in with rotation count
+bool is_drifting_right();
+bool is_drifting_left();
+
+//15ms to get sonar val x 3 for avg = 45ms = K
+//store a distance value in array every sample_freq ticks. ~= K*sample_freq ms 
+// sample freq of 10 results in 750ms sample update aprox for prevDistance
+void set_front_distance(byte theDistance){
+	//try to keep track of significant distance changes
+	//so we know if bot is increasing/decreasing distance to walls
+	//---testing
+	byte theCount;
+/*	byte theIndex;
+	if(theCount >=WALL_DIST_SAMPLE_FREQ){
+		if(theIndex > WALL_DIST_SAMPLE){
+			for (byte i;i < WALL_DIST_SAMPLE; i++)
+			{
+			}
+			theIndex = 0;
+		}		
+		frontDist[theIndex] = theDistance;
+		theCount = 0;
+		theIndex++;
+	}
+*/
+	if(theCount >=WALL_DIST_SAMPLE_FREQ){
+		prevFrontDist = theDistance;
+		theCount = 0;
+	}
+	frontDistance =  theDistance;
+	theCount++;
+}
+
+void set_right_distance(byte theDistance){
+	byte theCount;
+	//try to keep track of significant distance changes
+	//so we know if bot is increasing/decreasing distance to walls
+	if(theCount >=WALL_DIST_SAMPLE_FREQ){
+		prevRightDist = theDistance;
+		theCount = 0;
+	}
+	rightDistance =  theDistance;
+	theCount++;
+}
+
+void set_left_distance(byte theDistance){	
+	byte theCount;
+	//try to keep track of significant distance changes
+	//so we know if bot is increasing/decreasing distance to walls
+	if(theCount >=WALL_DIST_SAMPLE_FREQ){
+		prevLeftDist = theDistance;
+		theCount = 0;
+	}
+	leftDistance =  theDistance;
+	theCount++;
+}
+// return previous distances
+//safecall byte get_prev_front_distance(){
+byte get_prev_front_distance(){
+	//Acquire(fieldMutex);
+	return prevFrontDist;
+	//Release(fieldMutex);
+}
+//safecall byte get_prev_left_distance(){
+byte get_prev_left_distance(){
+	//Acquire(fieldMutex);
+	//return avgLeftDist;
+	return prevLeftDist;
+	//Release(fieldMutex);
+}
+//safecall byte get_prev_right_distance(){
+byte get_prev_right_distance(){
+	//Acquire(fieldMutex);
+	return prevRightDist;
+	//Release(fieldMutex);
+}
+//allow multiple instances of calls for distance checks
+//
+//inline byte get_front_distance(){	
+//safecall byte get_front_distance(){
+byte get_front_distance(){
+	//Acquire(frontDistMutex);
+	return frontDistance;
+	//Release(frontDistMutex);
+}
+
+//inline byte get_left_distance(){
+//safecall byte get_left_distance(){
+byte get_left_distance(){
+	//Acquire(leftDistMutex);
+	return leftDistance;
+	//Release(leftDistMutex);
+}
+
+//inline byte get_right_distance(){
+//safecall byte get_right_distance(){
+byte get_right_distance(){
+	//Acquire(rightDistMutex);
+	return rightDistance;
+	//Release(rightDistMutex);
+}
+//bool functions for checking distance changes
+bool is_drifting_left(){
+	//Acquire(fieldMutex);
+	if(prevLeftDist > leftDistance)
+		return true;
+	else
+		return false;
+	//Release(fieldMutex);
+}
+bool is_drifting_right(){
+	//Acquire(fieldMutex);
+	if(prevRightDist > rightDistance)
+		return true;
+	else
+		return false;
+	//Release(fieldMutex);
+}
+//check for wall in this cell
+//inline bool is_wall(byte theDistance){
+//safecall bool is_wall(byte theDistance){
+bool is_wall(byte theDistance){
+	//Acquire(fieldMutex);
+	if(theDistance < WALL_AT_THIS_CELL){
+		return true;
+	}
+	else
+		return false;
+	//Release(fieldMutex);
+}
+//inline bool is_wall_left(){
+//safecall bool is_wall_left(){
+bool is_wall_left(){
+	//Acquire(fieldMutex);
+	if(leftDistance < WALL_AT_THIS_CELL)
+		return true;
+	else
+		return false;
+	//Release(fieldMutex);
+}
+//inline bool is_wall_front(){
+//safecall bool is_wall_front(){
+bool is_wall_front(){
+	//Acquire(fieldMutex);
+	if(frontDistance < WALL_AT_THIS_CELL)
+		return true;
+	else
+		return false;
+	//Release(fieldMutex);
+}
+//inline bool is_wall_right(){
+//safecall bool is_wall_right(){
+bool is_wall_right(){
+	//Acquire(fieldMutex);
+	if(rightDistance < WALL_AT_THIS_CELL)
+		return true;
+	else
+		return false;
+	//Release(fieldMutex);
+}
+
+//check for wall in next cell
+//inline bool is_front_open(){
+//safecall is_front_open(){
+bool is_front_open(){
+	//Acquire(fieldMutex);
+	if(frontDistance > WALL_AT_NEXT_CELL)
+		return true;
+	else
+		return false;
+	//Release(fieldMutex);
+}
+//inline bool is_left_open(){
+//safecall bool is_left_open(){
+bool is_left_open(){
+	//Acquire(fieldMutex);
+	if(leftDistance > WALL_AT_NEXT_CELL)
+		return true;
+	else
+		return false;
+	//Release(fieldMutex);
+}
+//inline bool is_right_open(){
+//safecall bool is_right_open(){
+bool is_right_open(){
+	//Acquire(fieldMutex);
+	if(rightDistance > WALL_AT_NEXT_CELL)
+		return true;
+	else
+		return false;
+	//Release(fieldMutex);
+}
+
+//check if bot is off center
+bool is_off_center_left(){
+	//case: if wall on either side
+	//use the distances from the wall to keep center
+	//only use if sum of wall distance is less than 33/
+	//if bot is off at an angle, or recording the inside of a perpendiculare wall
+	//may cause bad results
+	if(is_wall_left() && is_wall_right()
+	&& (rightDistance > leftDistance+2)
+	&& ((rightDistance+leftDistance) < 33)){
+		return true;
+	}
+	//else if there is only one wall on left try to stay certain distance from it
+	else if(is_wall_left() /*&& !is_wall_right() */
+	&& leftDistance < rightDistance
+	&& leftDistance+1 < WALL_SIDE_DIST_LOWER){
+		return true;
+	}
+	//else if there is only one wall on right try to stay certain distance from it
+	else if(is_wall_right() /*&& !is_wall_left()*/
+	&& rightDistance < leftDistance
+	&& rightDistance > WALL_SIDE_DIST_LOWER+1){
+		return true;
+	}
+	else{
+		return false;
+	}
+}
+bool is_off_center_right(){
+	//case: if wall on either side
+	//use the distances from the wall to keep center
+	if(is_wall_left() && is_wall_right()
+	&& (rightDistance+2 < leftDistance)
+	&& ((rightDistance+leftDistance) < 33)){
+		return true;
+	}
+	//else if the bot thinks there are two walls, use the closer of the two walls as reference wall
+	//else if there is only one wall on left try to stay certain distance from it
+	else if(is_wall_left() /*&& !is_wall_right() && */
+	&& leftDistance < rightDistance
+	&& leftDistance > WALL_SIDE_DIST_LOWER+1){
+		return true;
+	}
+	//else if there is only one wall on right try to stay certain distance from it
+	else if(is_wall_right() /*&& !is_wall_left() &&*/
+	&& rightDistance < leftDistance
+	&& rightDistance+1 < WALL_SIDE_DIST_LOWER){
+		return true;
+	}
+	else{
+		return false;
+	}
+}
+
+//figure how far off of center we are
+//displacement position in cell
+//erronous results, when constantly calling to read the value with multiple tasks
+//acquire and release mutex still causes issues, safecall causes issue
+//for now. only let one task call this at a time.
+//3.27.13fix by setting it inline. but doubles the code size.
+//maybe it gets stuck with differnt tasks trying to read/write at same time
+//3.28 try safecall. wraps function in mutex. only allow one instance
+//causes problems
+//inline byte build_displacement(){
+//safecall byte build_displacement(){
+byte build_displacement(){
+	byte theDisplacement = 0;
+	byte theDistToWall,theCenterPos;
+	//expect the bot to be 10-11 cm from the wall
+	theCenterPos = WALL_SIDE_DIST_LOWER;
+	//use the average distance between two walls
+	//if we have two walls
+	if(is_wall_right() && is_wall_left()
+	&& (leftDistance + rightDistance) < WALL_SUM){
+	//breaks down because of inaccurate close range distance reading
+	//up against the wall is not 6cm away!!
+	//	theCenterPos = (rightDistance + leftDistance)/2;  
+		//use the larger of two distance values since sonar senors
+		//are less accurrate at very close range
+		if(rightDistance > leftDistance)
+			theDistToWall = rightDistance;
+		else
+			theDistToWall = leftDistance;	
+	}
+	//else use a predifined dist value
+   // else
+	//	theCenterPos = WALL_SIDE_DIST_LOWER;
+	//if we have a left wall to use as reference wall
+	else if(is_wall_left() && leftDistance < rightDistance)
+		theDistToWall = leftDistance;
+	//else we have a right wall for reference wall
+	else if(is_wall_right()	&& rightDistance < leftDistance)
+		theDistToWall = rightDistance;
+	//now figure out how far off the bot is
+	if(theDistToWall > theCenterPos)
+		theDisplacement = theDistToWall - theCenterPos;
+	else
+		theDisplacement = theCenterPos - theDistToWall;
+	//with the size of cells, we shouldnt see a high displacement
+	//if the displacement is high, something is wrong. incorrect reading, or bot is possible to far off to make a recovery
+	//so we make a limit
+	if(theDisplacement < 16)	
+		return theDisplacement;
+	else
+		return 16;
+}
+
+//inline byte get_displacement(){
+//safecall byte get_displacement(){
+byte get_displacement(){
+	Acquire(displacementMutex);
+	byte theDisplacement = build_displacement(); 
+	if(theDisplacement != displacement){
+		displacement = theDisplacement;
+		}
+	return displacement;
+	Release(displacementMutex);
+}
+
+//return correction factor to adjust bots position in maze
+//the more off center bot is, the higher the correction factor
+//inline byte get_correction_factor(){
+//safecall byte get_correction_factor(){
+byte get_correction_factor(){
+	Acquire(correctionFactorMutex);
+	byte theCorrectionFactor = 0;	
+	theCorrectionFactor = get_displacement()*KP;
+	//set a limit
+	if(theCorrectionFactor > 60)
+		theCorrectionFactor = 60;
+	return theCorrectionFactor;
+	Release(correctionFactorMutex);
+}
+
+#endif

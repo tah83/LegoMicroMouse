@@ -1,0 +1,393 @@
+#ifndef	_MAZE_NXC_
+#define _MAZE_NXC_
+#include "Cell.nxc";
+
+//define maze dimensions
+#define MAZE_WIDTH	5
+#define MAZE_HEIGHT	5
+#define MAZE_START_X	0
+#define MAZE_START_Y	0
+
+#define CELL_UNDEFINED		255
+#define CELL_CLEAR			0
+
+#define TO_CENTER	0
+#define TO_START	1
+
+/*
+struct cellStruct{
+	byte thisX;
+	byte thisY;
+}
+*/
+struct cellQueue{
+	byte theCounter;
+	byte theSize;
+//	cellStruct theCell[];
+	byte thisX[];
+	byte thisY[];
+};	
+//array for cells distance values in the maze
+byte mazeCellDist[MAZE_WIDTH][MAZE_HEIGHT];
+//bool mazeGoalFound = false;
+byte mazeGoal;
+//maze functions
+/*set all the distance vallues to garbage number of 255
+set the walls we know should exist in the maze (border)
+*/
+void maze_initialize();
+/*re-initialize the maze to be re-flooded
+set all distance values in maze to 255
+*/
+void maze_reset();
+/*calls maze_reset an re-floods the maze with new distance values
+should be called when the bot can not move to cell with a lower distance value
+*/
+void maze_flood_fill();
+//queue functions
+//initialize the queue with size theQueueSize
+//set queue x,y data to garbage value of 255
+void maze_initialize_queue(cellQueue &theQueue,byte theQueueSize);
+/*add elements to the back of queue and increase element count
+*/
+void maze_enqueue(cellQueue &theQueue,byte theX, byte theY);
+/*get data from front of queue by reference 
+remove front data and decrease the count
+*/
+void maze_dequeue(cellQueue &theQueue,byte &theX, byte &theY);
+//prints
+/*print the queue to the LCD, for a 5x5 this is ok. for a larger maze, there
+may be to many elements in the queue to display all to the lcd
+*/
+void maze_print_queue(cellQueue theQueue);
+/*print the 5x5 maze to the LCD
+*/
+void maze_print();
+/*set the new goal for the bot. after bot has found the center, change goal to be back to the start
+after it gets back to start, change goal to be the center...
+*/
+void maze_change_goal();
+//sets and gets
+/*return the distance value of the cell at x,y
+return: byte
+*/
+byte maze_get_cell_value(byte theX,byte theY);
+/*return the wall information of the cell at x,y
+return: byte
+*/
+byte maze_get_cell_walls(byte theX,byte theY);
+/*return the size of the maze, max x value
+return: byte
+*/
+byte maze_get_x_size();
+/*return the size of the maze, max y value
+return: byte
+*/
+byte maze_get_y_size();
+/*return the x position of the current goal in the maze
+return: byte
+*/
+byte maze_get_target_x();
+/*return the y position of the current goal in the maze
+return: byte
+*/
+byte maze_get_target_y();
+//
+/*set the cell distance value at position x,y
+*/
+void maze_set_cell_value(byte theX,byte theY, byte theValue);
+/*set the cell wall information at position x,y
+*/
+void maze_set_cell_walls(byte theX,byte theY,byte theCellWalls);
+/*set the cell explored bit at position x,y
+*/
+void maze_set_cell_explored(byte theX,byte theY);
+/*return true if cell at x,y has been explored
+*/
+bool maze_is_cell_explored(byte theX, byte theY);
+/*return true if x,y is out of bounds
+used during iterating through array, to make sure we outside the array size
+trying to access beyond array size cuases a -1 error
+*/
+bool maze_is_xy_in_boundry(byte theX, byte theY);
+
+
+void maze_initialize(){
+	for(byte x = 0; x < MAZE_WIDTH; x++){
+		for(byte y = 0; y < MAZE_HEIGHT; y++){
+			mazeCellDist[x][y] = CELL_UNDEFINED;
+			//fill in cell walls we know exist
+			if(y == 0)
+				cell_set_walls(x,y,CELL_WALL_SOUTH);
+			if(x == 0)
+				cell_set_walls(x,y,CELL_WALL_WEST);
+			if(y == MAZE_HEIGHT-1)
+				cell_set_walls(x,y,CELL_WALL_NORTH);
+			if(x == MAZE_WIDTH-1)
+				cell_set_walls(x,y,CELL_WALL_EAST);
+			if(x != 0 && x != MAZE_WIDTH-1 && y != 0 && y != MAZE_WIDTH-1)
+				cell_set_walls(x,y,CELL_CLEAR);
+		}
+	}
+	//mazeGoalFound = false;
+	mazeGoal = TO_CENTER;
+}
+//reset maze values
+//does not reset wall information
+//used before re-flooding maze with new distance values
+void maze_reset(){
+	for(byte x = 0; x < MAZE_WIDTH; x++){
+		for(byte y = 0; y < MAZE_HEIGHT; y++){
+			mazeCellDist[x][y] = CELL_UNDEFINED;
+		}
+	}
+}
+//initialize data arrays in queue and assign garbage value of 255 
+void maze_initialize_queue(cellQueue &theQueue,byte theQueueSize){
+	theQueue.theSize = theQueueSize;
+	ArrayInit(theQueue.thisX,255,theQueue.theSize);
+	ArrayInit(theQueue.thisY,255,theQueue.theSize);
+	theQueue.theCounter = 0;	
+}
+//maze_enqueue
+//add new entrys to end of queue and increment the counter
+void maze_enqueue(cellQueue &theQueue,byte theX, byte theY){
+	theQueue.thisX[theQueue.theCounter] = theX;
+	theQueue.thisY[theQueue.theCounter] = theY;
+	theQueue.theCounter++;
+}
+//maze_dequeue
+//get the x,y  for cell on the front of the queue
+//shift the queue forward and decrement counter
+void maze_dequeue(cellQueue &theQueue,byte &theX, byte &theY){
+	theX = theQueue.thisX[0];
+	theY = theQueue.thisY[0];
+	for(byte i = 1; i < theQueue.theCounter; i++){
+		theQueue.thisX[i-1] = theQueue.thisX[i];
+		theQueue.thisY[i-1] = theQueue.thisY[i];
+	}
+	theQueue.theCounter--;
+}
+//
+//flood maze back from center
+//requires knowledge of walls which is gained while exploring maze
+void maze_flood_fill(){	
+	byte theTargetX, theTargetY;
+	byte thisCellValue,thisX,thisY;
+	//queue size could be less. looks like at most in a 5x5 it will only have ~9 cells on the quueue
+	byte theQueueSize = MAZE_WIDTH * MAZE_HEIGHT;
+	cellQueue theCellQueue;
+	//cellStruct theCell;
+	
+	//reset maze to be re-flooded
+	maze_reset();
+	//initialize/clear the queue
+	maze_initialize_queue(theCellQueue,theQueueSize);
+	//maze_initialize_queue(theCellQueue,theCell,theQueueSize);
+	//set target x and y for flooding maze
+	theTargetX = maze_get_target_x();
+	theTargetY = maze_get_target_y();
+
+	//load first cell. the target cell spot in the maze
+	maze_set_cell_value(theTargetX,theTargetY,0);
+	//put it in the queuue as the first cell to start with for examining connected cells
+	maze_enqueue(theCellQueue,theTargetX,theTargetY);
+	//while there are cells to examine do the loop
+	while(theCellQueue.theCounter){
+//		ClearScreen();	
+//		maze_print();
+//		Wait(2000);
+//		ClearScreen();
+//		maze_print_queue(theCellQueue);
+//		Wait(2000);
+		//--get curent cell x and y
+		maze_dequeue(theCellQueue,thisX,thisY);
+		//--get current cell value
+		thisCellValue = maze_get_cell_value(thisX,thisY);
+
+		//check if cell to north is blocked
+		if(!cell_is_wall_north(thisX,thisY)&& thisY+1 < MAZE_HEIGHT){		
+		//check if distance in north neighbor cell is greater than current distance + 1
+			if((thisCellValue + 1) < maze_get_cell_value(thisX,thisY+1)){
+				//add to top of queue
+				maze_enqueue(theCellQueue,thisX,thisY+1);
+				//update cell value
+				maze_set_cell_value(thisX,thisY+1,thisCellValue+1);
+			}
+		}		
+		//check if cell to east is blocked
+		if(!cell_is_wall_east(thisX,thisY) && thisX+1 < MAZE_WIDTH){
+		//check if distance in east neighbor cell is greater than current distance + 1
+			if((thisCellValue + 1) < maze_get_cell_value(thisX+1,thisY)){		
+				//add to top of queue
+				maze_enqueue(theCellQueue,thisX+1,thisY);
+				//update cell value
+				maze_set_cell_value(thisX+1,thisY,thisCellValue+1);
+			}
+		}
+		//check if cell to south is blocked
+		if(!cell_is_wall_south(thisX,thisY) && thisY-1 >= 0){//thisY-1 != 255 && thisY-1 != -1){		
+		//check if distance in south neighbor cell is greater than current distance + 1
+			if((thisCellValue + 1) < maze_get_cell_value(thisX,thisY-1)){
+				//add to top of queue
+				maze_enqueue(theCellQueue,thisX,thisY-1);
+				//update cell value
+				maze_set_cell_value(thisX,thisY-1,thisCellValue+1);
+			}			
+		}
+		//check if cell to west is blocked
+		//thisX and thisY are type unsigned byte array. value in array can be -1
+		//check boundrys before trying to set a value.
+		//check required only if the maze doesnt have border walls
+		if(!cell_is_wall_west(thisX,thisY) && thisX-1 >= 0){// thisX-1 != 255 && thisX-1 != -1){
+		//check if distance in west neighbor cell is greater than current distance + 1
+			if((thisCellValue + 1) < maze_get_cell_value(thisX-1,thisY)){
+				//add to the top of queue
+				maze_enqueue(theCellQueue,thisX-1,thisY);
+				//update cell value
+				maze_set_cell_value(thisX-1,thisY,thisCellValue+1);
+			}
+		}
+	}
+}
+
+//set appropiate walls. check by masking with its self to see if direction bit is set
+//does not check if cell wall is already set and does not clear cell wall. enviorment should change
+//so no need to clear it.
+void maze_set_cell_walls(byte theX, byte theY, byte theCellWalls){
+	if((theCellWalls & CELL_WALL_EAST) == CELL_WALL_EAST){
+		cell_set_walls(theX,theY,CELL_WALL_EAST);
+		if(theX+1 < MAZE_WIDTH)
+			cell_set_walls(theX+1,theY,CELL_WALL_WEST);
+	}
+	if((theCellWalls & CELL_WALL_WEST) == CELL_WALL_WEST){		
+		cell_set_walls(theX,theY,CELL_WALL_WEST);
+		if(theX-1 != 255 && theX-1 != -1)
+		//if(theX - 1 >= 0)
+			cell_set_walls(theX-1,theY,CELL_WALL_EAST);
+	}
+	if((theCellWalls & CELL_WALL_NORTH) == CELL_WALL_NORTH){
+		cell_set_walls(theX,theY,CELL_WALL_NORTH);
+		if(theY+1 < MAZE_HEIGHT)
+			cell_set_walls(theX,theY+1,CELL_WALL_SOUTH);
+	}
+	if((theCellWalls & CELL_WALL_SOUTH) == CELL_WALL_SOUTH){
+		cell_set_walls(theX,theY,CELL_WALL_SOUTH);
+		if(theY-1 != 255 && theY-1 != -1)
+		//if(theY - 1 >= 0)
+			cell_set_walls(theX,theY-1,CELL_WALL_NORTH);
+	}
+}
+//print the queue information in two rows
+//for a 5x5 maze it may have as many as 11 or so items to print
+void maze_print_queue(cellQueue theQueue){
+	for(byte i = 0; i< theQueue.theCounter; i++){
+		if(i < 7){
+			NumOut(0,LCD_LINE1-i*8,i);
+			NumOut(14,LCD_LINE1-i*8,theQueue.thisX[i]);
+			NumOut(28,LCD_LINE1-i*8,theQueue.thisY[i]);
+		}
+		else{
+			NumOut(46,2*LCD_LINE1-i*8,i);
+			NumOut(60,2*LCD_LINE1-i*8,theQueue.thisX[i]);
+			NumOut(74,2*LCD_LINE1-i*8,theQueue.thisY[i]);
+		}		
+	}
+}
+//print maze, distance values and walls that have been seen
+void maze_print(){
+/*	for(byte i = 0; i < get_maze_x_size(); i++){
+		for(byte j = 0; j < get_maze_y_size(); j++){
+			NumOut(i+i*18,LCD_LINE5+j*8,get_cell_value(i,j));
+		}
+	}
+*/
+	//byte numRow = 0,numCol = 0;
+	byte thePosX = 0, thePosY = 0;
+	for(byte i = 0; i < maze_get_x_size(); i++){
+		for(byte j = 0; j < maze_get_y_size(); j++){
+			//NumOut(i+8+i*18,LCD_LINE5+j*8-1,get_cell_walls(i,j));
+			NumOut(i+6+i*18,LCD_LINE5+j*8-1,maze_get_cell_value(i,j));
+			if(cell_is_wall_north(i,j)){
+				thePosX = i+i*18;
+				thePosY = (LCD_LINE5+7)+j*8;
+				//start x, start y, end x, end y
+				LineOut(thePosX, thePosY,thePosX+18, thePosY, DRAW_OPT_LOGICAL_OR);
+			}
+			if(cell_is_wall_south(i,j)){
+				thePosX = i+i*18;
+				thePosY = (LCD_LINE5-1)+j*8;
+				//start x, start y, end x, end y
+				LineOut(thePosX, thePosY,thePosX+18, thePosY, DRAW_OPT_LOGICAL_OR);
+			}
+			if(cell_is_wall_east(i,j)){
+				thePosX = i*(1+18)+18;
+				thePosY = (LCD_LINE5-1)+j*8;
+				//start x, start y, end x, end y
+				LineOut(thePosX, thePosY,thePosX, thePosY+8, DRAW_OPT_LOGICAL_OR);
+			}
+			if(cell_is_wall_west(i,j)){
+				thePosX = i*(1+18);
+				thePosY = (LCD_LINE5-1)+j*8;
+				//start x, start y, end x, end y
+				LineOut(thePosX, thePosY,thePosX, thePosY+8, DRAW_OPT_LOGICAL_OR);
+			}
+		}
+	}
+}
+//set the distance value for the cell
+void maze_set_cell_value(byte theX, byte theY, byte theValue){
+	mazeCellDist[theX][theY] = theValue;
+}
+//set if the cell has been explored
+void maze_set_cell_explored(byte theX, byte theY){
+	cell_set_explored(theX,theY);
+}
+//call when goal is found, to set new goal
+void maze_change_goal(){
+	if(mazeGoal == TO_CENTER)
+		mazeGoal = TO_START;
+	else
+		mazeGoal = TO_CENTER;
+}
+bool maze_is_cell_explored(byte theX, byte theY){
+	return cell_is_explored(theX,theY);
+}
+byte maze_get_cell_value(byte theX, byte theY){
+	return mazeCellDist[theX][theY];
+}
+byte maze_get_cell_walls(byte theX, byte theY){
+	return cell_get_walls(theX,theY) & CELL_WALL_MASK;
+}
+//check for array boundrys
+bool maze_is_xy_in_boundry(byte theX, byte theY){
+	if(theX >= MAZE_WIDTH || theY >= MAZE_HEIGHT || theX < 0 || theY < 0)
+		return false;
+	else
+		return true;
+}
+//return the target goal x position 
+byte maze_get_target_x(){
+	byte theTargetX;
+	if(mazeGoal == TO_CENTER)
+		theTargetX = MAZE_WIDTH/2;	
+	else
+		theTargetX = 0;
+	return theTargetX;
+}
+//return the target goal y position 
+byte maze_get_target_y(){
+	byte theTargetY;
+	if(mazeGoal == TO_CENTER)
+		theTargetY = MAZE_HEIGHT/2;	
+	else
+		theTargetY = 0;
+	return theTargetY;
+}
+byte maze_get_x_size(){
+	return MAZE_WIDTH;
+}
+byte maze_get_y_size(){
+	return MAZE_HEIGHT;
+}
+#endif

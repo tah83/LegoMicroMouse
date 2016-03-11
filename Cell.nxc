@@ -1,0 +1,124 @@
+#ifndef	_CELL_NXC_
+#define _CELL_NXC_
+//define for maze cell info
+//
+#define MAZE_WIDTH	5
+#define MAZE_HEIGHT	5
+
+#define CELL_WALL_NORTH		1
+#define CELL_WALL_EAST		2
+#define CELL_WALL_SOUTH		4
+#define CELL_WALL_WEST		8
+#define CELL_EXPLORED		16
+#define CELL_WALL_MASK		15
+	
+//8-bit [7,6,5,4,3,2,1,0]
+//			  16,8,4,2,1  
+//             X,W,S,E,N
+//use first four bits to define wall locations in cells. West, South, East, North
+//if wall is found. bit is 1. if no wall bit is 0
+//X marks cell has been explored. 1 = explored 0 = not explored
+//not currently making using of explored bit
+byte cellInfo[MAZE_WIDTH][MAZE_HEIGHT];/* =
+{{0x00,0x00,0x00,0x00,0x00},
+{0x00,0x00,0x00,0x00,0x00},
+{0x00,0x00,0x00,0x00,0x00},
+{0x00,0x00,0x00,0x00,0x00},
+{0x00,0x00,0x00,0x00,0x00}};
+*/
+
+//sets
+//void cell_set_maze_size(byte theSizeX,byte theSizeY);
+/*update the two dimensional array of wall information in the current cell at x,y\
+accepts parameters of bots x and y position, and 8-bits for the cell wall information
+//8-bit [7,6,5,4,3,2,1,0]
+//			  16,8,4,2,1  
+//             X,W,S,E,N
+//use first four bits to define wall locations in cells. West, South, East, North
+*/
+void cell_set_walls(byte theX, byte theY, byte theCellWall);
+/*set the bit for the cell at x,y as being explored
+
+*/
+void cell_set_explored(byte theX, byte theY);
+/*clear the cell wall info at x,y -- not used
+cell walls shouldnt change, but sometimes there's bad reading
+or it could be usefull in testing, if I want to move walls around w/o restarting the bot
+*/
+void cell_clear_walls(byte theX, byte theY);
+//gets
+/*return the 8-bits of cell wall informaiton as position x,y
+*/
+byte cell_get_walls(byte theX, byte theY);
+
+//bool functions
+/*return if the cell has been explored. if bot has seen this cell at x,y
+*/
+bool cell_is_explored(byte theX, byte theY);
+/*return true if in the cell at x,y has a north wall
+*/
+bool cell_is_wall_north(byte theX,byte theY);
+/*return true if in the cell at x,y has a east wall
+*/
+bool cell_is_wall_east(byte theX,byte theY); 
+/*return true if in the cell at x,y has a south wall
+*/
+bool cell_is_wall_south(byte theX,byte theY); 
+/*return true if in the cell at x,y has a west wall
+*/
+bool cell_is_wall_west(byte theX,byte theY);
+
+// AND with current cell info to retain if cell was explored
+void cell_clear_walls(byte theX, byte theY){
+	cellInfo[theX][theY] = cellInfo[theX][theY] & 0xF0;
+}
+//set the bits for each cell in the maze the bot sees
+//OR with current cell info to retain upper 4 bits on info
+void cell_set_walls(byte theX, byte theY, byte theCellWall){
+	cellInfo[theX][theY] = theCellWall | cellInfo[theX][theY];
+}
+//set visited bit and retain other set bits
+void cell_set_explored(byte theX, byte theY){
+	cellInfo[theX][theY] = CELL_EXPLORED | cellInfo[theX][theY];
+}
+//return just cell wall bits
+//masked with 0x0F to return just the lower 4 bits of cell wall info
+byte cell_get_walls(byte theX, byte theY){
+	return cellInfo[theX][theY] & CELL_WALL_MASK;
+}
+//mask with visited bit, if true bit = 1
+bool cell_is_explored(byte theX, byte theY){
+	if((cellInfo[theX][theY] & CELL_EXPLORED) == 0)
+		return false;
+	else
+		return true;
+}
+//mask with north bit, if true bit = 1
+bool cell_is_wall_north(byte theX, byte theY){
+	if((cellInfo[theX][theY] & CELL_WALL_NORTH) == 0)
+		return false;
+	else
+		return true;
+}
+//mask with east bit, if true bit = 1
+bool cell_is_wall_east(byte theX, byte theY){
+	if((cellInfo[theX][theY] & CELL_WALL_EAST) == 0)
+		return false;
+	else
+		return true;
+}
+//mask with south bit, if true bit = 1
+bool cell_is_wall_south(byte theX, byte theY){
+	if((cellInfo[theX][theY] & CELL_WALL_SOUTH) == 0)
+		return false;
+	else
+		return true;
+}
+//mask with west bit, if true bit = 1
+bool cell_is_wall_west(byte theX, byte theY){
+	if((cellInfo[theX][theY] & CELL_WALL_WEST) == 0)
+		return false;
+	else
+		return true;
+} 
+#endif

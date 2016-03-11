@@ -1,0 +1,411 @@
+#ifndef _MOTORCONTROL_NXC_
+#define _MOTORCONTROL_NXC_
+
+mutex moveMutex;
+
+//define motors
+#define	MOTOR_RIGHT		OUT_A
+#define MOTOR_LEFT		OUT_B
+#define MOTORS			OUT_AB
+
+//return the rotation count of the left motor
+int motor_get_left_rotation_count();
+//return the rotation count of the right motor
+int motor_get_right_rotation_count();
+//return the average rotation count for both motors
+//(right+left)/2
+int motor_get_rotation_count();
+//functions
+//move forward using sync commnad
+void fwd_sync(byte thePwr);
+//turn right using sync command
+void fwd_sync_right(byte thePwr, byte theTurnRatio);
+//turn left using sync command
+void fwd_sync_left(byte thePwr, byte theTurnRatio);
+//make a reverse right turn for some number of wheel rotations
+void rev_deg_right(byte thePwr, int theCount);
+//make a reverse left turn for some number of wheel rotations
+void rev_deg_left(byte thePwr, int theCount);
+//go forward right some number of wheel rotations
+void fwd_deg_right(byte thePwr, int theCount);
+//go forward left some number of wheel rotations
+void fwd_deg_left(byte thePwr, int theCount);
+
+//move reverse right
+void rev_right(byte thePwr);
+//move reverse left
+void rev_left(byte thePwr);
+//forward right
+void fwd_right(byte thePwr);
+//forward left
+void fwd_left(byte thePwr);
+//drive both motors forward, some number of degrees
+//make adjustments to bots movement, by decreasing the speed of the left motor by a correction factor
+void motor_correct_deg_left(byte thePwr, byte theCorrectionFactor, byte theDeg);
+//make adjustments to bots movement, by decreasing the speed of the right motor by a correction factor
+void motor_correct_deg_right(byte thePwr, byte theCorrectionFactor, byte theDeg);
+//theres a lot of tests/playing around with motor commands and ways of controlling the motors
+//a lot that isnt used in recent build. should be cleaned up
+/*
+//define one step as a eigth/quarter/half/full rotation of the wheel
+//before switching from RotateMotorEx
+//decided to quite trying to make theese servo motors work like stepper motors
+
+#define STEP_TWENTYFORTH	15
+#define STEP_TWELFTH		30
+#define STEP_EIGTH			45
+#define STEP_QUARTER		90
+#define STEP_HALF			180
+#define	STEP_FULL			360
+#define STEP				STEP_TWELFTH
+//initialize step count
+byte stepCount = 0;
+string moveAction2 = "";
+
+byte get_step_count(){
+	return stepCount;
+}
+void reset_step_count(){
+	stepCount = 0;
+}
+void set_step_count(byte newStep){
+	stepCount = newStep;
+}
+safecall void fwd_step(byte thePwr){
+	Acquire(moveMutex);
+	moveAction2 = "fwd";
+	stepCount++;
+	RotateMotorEx(MOTORS, thePwr, STEP, 0, true, false);
+	Release(moveMutex);
+}
+safecall void fwd_step_right(byte thePwr,byte theTurnRatio){
+	Acquire(moveMutex);
+	moveAction2 = "fwd right";
+	stepCount++;
+	RotateMotorEx(MOTORS, thePwr, STEP, (theTurnRatio), true, false);
+	Release(moveMutex);
+}
+safecall void fwd_step_left(byte thePwr, byte theTurnRatio){
+	Acquire(moveMutex);
+	moveAction2 = "fwd left";
+	stepCount++;
+	RotateMotorEx(MOTORS, thePwr, STEP, -(theTurnRatio), true, false);
+	Release(moveMutex);
+}
+
+safecall void rev_step(byte thePwr){
+	Acquire(moveMutex);
+	stepCount--;
+	RotateMotorEx(MOTORS, -thePwr, STEP, 0, true, false);
+	Release(moveMutex);
+}
+*/
+int motor_get_left_rotation_count(){
+	Acquire(moveMutex);	
+	int theLeftRotCount = MotorRotationCount(MOTOR_LEFT);	
+	//Wait(5);
+	Release(moveMutex);
+	return theLeftRotCount;	
+}
+int motor_get_right_rotation_count(){
+	Acquire(moveMutex);	
+	int theRightRotCount = MotorRotationCount(MOTOR_RIGHT);
+	//Wait(5);
+	Release(moveMutex);	
+	return theRightRotCount;	
+}
+int motor_get_rotation_count(){
+	Acquire(moveMutex);	
+	int theAvgRotCount = 0;
+	int theRightRotCount = MotorRotationCount(MOTOR_RIGHT);
+	int theLeftRotCount = MotorRotationCount(MOTOR_LEFT);	
+	//Wait(5);
+	theAvgRotCount = (theRightRotCount + theLeftRotCount)/2;
+	Release(moveMutex);	
+	return theRightRotCount;	
+}
+
+void motor_correct_deg_left(byte thePwr, byte theCorrectionFactor, byte theDeg){
+	Acquire(moveMutex);	
+	int theRightRotCount = MotorRotationCount(MOTOR_RIGHT);
+	OnFwd(MOTOR_RIGHT,thePwr);
+	OnFwd(MOTOR_LEFT,thePwr-(theCorrectionFactor));
+	until (MotorRotationCount(MOTOR_RIGHT) > theRightRotCount + theDeg);
+	CoastEx(MOTORS,RESET_NONE);
+	Release(moveMutex);	
+}
+void motor_correct_deg_right(byte thePwr, byte theCorrectionFactor, byte theDeg){
+	Acquire(moveMutex);	
+	int theLeftRotCount = MotorRotationCount(MOTOR_LEFT);
+	OnFwd(MOTOR_RIGHT,thePwr-(theCorrectionFactor));
+	OnFwd(MOTOR_LEFT,thePwr);
+	until (MotorRotationCount(MOTOR_LEFT) > theLeftRotCount + theDeg);
+	CoastEx(MOTORS,RESET_NONE);
+	Release(moveMutex);	
+}
+
+//use left motor to do most of the work
+//calibrated per motor
+void sync_right_90(byte thePwr){
+	Acquire(moveMutex);	
+	//ResetRotationCount(MOTORS);
+	int theLeftRotCount = MotorRotationCount(MOTOR_LEFT);
+	OnFwdSync(MOTORS, thePwr, 100);	
+	until (MotorRotationCount(MOTOR_LEFT) > theLeftRotCount + 150);
+	//OffEx(MOTORS, RESET_NONE);
+	CoastEx(MOTORS, RESET_NONE);
+	Wait(1);
+	Release(moveMutex);	
+}
+//use right motor to do most of the work
+void sync_left_90(byte thePwr){
+	Acquire(moveMutex);	
+	//ResetRotationCount(MOTORS);
+	int theRightRotCount = MotorRotationCount(MOTOR_RIGHT);
+	OnFwdSync(MOTORS, thePwr, -100);
+	until (MotorRotationCount(MOTOR_RIGHT) > theRightRotCount + 140);
+	//OffEx(MOTORS, RESET_NONE);
+	CoastEx(MOTORS, RESET_NONE);
+	Wait(1);
+	Release(moveMutex);	
+}
+//rotate right 180 degrees
+void sync_right_180(byte thePwr){
+	Acquire(moveMutex);	
+	//ResetRotationCount(MOTORS);
+	int theLeftRotCount = MotorRotationCount(MOTOR_LEFT);
+	OnFwdSync(MOTORS, thePwr, 100);	
+	until (MotorRotationCount(MOTOR_LEFT) > theLeftRotCount + 300);
+	//OffEx(MOTORS, RESET_NONE);
+	CoastEx(MOTORS, RESET_NONE);
+	Wait(1);
+	Release(moveMutex);	
+}
+
+void sync_left_180(byte thePwr){
+	Acquire(moveMutex);	
+	//ResetRotationCount(MOTORS);
+	int theRightRotCount = MotorRotationCount(MOTOR_RIGHT);
+	OnFwdSync(MOTORS, thePwr, -100);	
+	until (MotorRotationCount(MOTOR_RIGHT) > theRightRotCount + 280);
+	//OffEx(MOTORS, RESET_NONE);
+	CoastEx(MOTORS, RESET_NONE);
+	Wait(1);
+	Release(moveMutex);	
+}
+
+void sync_fwd_deg(byte thePwr, int theCount){
+	Acquire(moveMutex);	
+	//ResetRotationCount(MOTORS);
+	int theRightRotCount = MotorRotationCount(MOTOR_RIGHT);
+	OnFwdSync(MOTORS, thePwr, 0);
+	until (MotorRotationCount(MOTOR_RIGHT) > theRightRotCount + theCount);
+	//OffEx(MOTORS, RESET_NONE);
+	CoastEx(MOTORS, RESET_NONE);
+	Wait(1);
+	Release(moveMutex);	
+}
+void sync_rev_deg(byte thePwr, int theCount){
+	Acquire(moveMutex);	
+	//ResetRotationCount(MOTORS);
+	int theRightRotCount = MotorRotationCount(MOTOR_RIGHT);
+	OnRevSync(MOTORS, thePwr, 0);
+	until (MotorRotationCount(MOTOR_RIGHT) < theRightRotCount - theCount);
+	//OffEx(MOTORS, RESET_NONE);
+	CoastEx(MOTORS, RESET_NONE);
+	Wait(1);
+	Release(moveMutex);	
+}
+void sync_fwd_deg_right(byte thePwr, byte theTurnRatio, int theCount){
+	Acquire(moveMutex);	
+	//ResetRotationCount(MOTORS);
+	int theLeftRotCount = MotorRotationCount(MOTOR_LEFT);
+	OnFwdSync(MOTORS, thePwr, theTurnRatio);
+	until (MotorRotationCount(MOTOR_LEFT) > theLeftRotCount + theCount);
+	//OffEx(MOTORS, RESET_NONE);
+	CoastEx(MOTORS, RESET_NONE);
+	Wait(1);
+	Release(moveMutex);	
+}
+void sync_fwd_deg_left(byte thePwr, byte theTurnRatio, int theCount){
+	Acquire(moveMutex);	
+	//ResetRotationCount(MOTORS);
+	int theRightRotCount = MotorRotationCount(MOTOR_RIGHT);
+	OnFwdSync(MOTORS, thePwr, -theTurnRatio);
+	until (MotorRotationCount(MOTOR_RIGHT) > theRightRotCount + theCount);
+	//OffEx(MOTORS, RESET_NONE);
+	CoastEx(MOTORS, RESET_NONE);
+	Wait(1);
+	Release(moveMutex);	
+}
+void rev_deg_right(byte thePwr, int theCount){
+	Acquire(moveMutex);
+	//ResetRotationCount(MOTORS);
+	int theRightRotCount = MotorRotationCount(MOTOR_RIGHT);
+	OnRev(MOTOR_RIGHT, thePwr);
+	until (MotorRotationCount(MOTOR_RIGHT) < theRightRotCount - theCount);
+	//OffEx(MOTORS, RESET_NONE);
+	CoastEx(MOTORS, RESET_NONE);
+	Wait(1);
+	Release(moveMutex);
+}
+void rev_deg_left(byte thePwr, int theCount){
+	Acquire(moveMutex);
+	//ResetRotationCount(MOTORS);
+	int theLeftRotCount = MotorRotationCount(MOTOR_LEFT);
+	OnRev(MOTOR_LEFT, thePwr);
+	until (MotorRotationCount(MOTOR_LEFT) < theLeftRotCount - theCount);
+	//OffEx(MOTORS, RESET_NONE);
+	CoastEx(MOTORS, RESET_NONE);
+	Wait(1);
+	Release(moveMutex);
+}
+void fwd_deg_left(byte thePwr, int theCount){
+	Acquire(moveMutex);
+	//ResetRotationCount(MOTORS);
+	int theRightRotCount = MotorRotationCount(MOTOR_RIGHT);
+	OnFwd(MOTOR_RIGHT, thePwr);
+	until (MotorRotationCount(MOTOR_RIGHT) > theRightRotCount + theCount);
+	//OffEx(MOTORS, RESET_NONE);
+	CoastEx(MOTORS, RESET_NONE);
+	Wait(1);
+	Release(moveMutex);
+}
+void fwd_deg_right(byte thePwr, int theCount){
+	Acquire(moveMutex);
+	//ResetRotationCount(MOTORS);
+	int theLeftRotCount = MotorRotationCount(MOTOR_LEFT);
+	OnFwd(MOTOR_LEFT, thePwr);
+	until (MotorRotationCount(MOTOR_LEFT) > theLeftRotCount + theCount);
+	//OffEx(MOTORS, RESET_NONE);
+	CoastEx(MOTORS, RESET_NONE);
+	Wait(1);
+	Release(moveMutex);
+}
+
+
+void rev_sync(byte thePwr){
+	Acquire(moveMutex);
+	OnRevSync(MOTORS,thePwr,0);
+	CoastEx(MOTORS, RESET_NONE);
+	Release(moveMutex);
+}
+
+void fwd_sync(byte thePwr){
+	Acquire(moveMutex);
+	OnFwdSync(MOTORS,thePwr,0);
+	//CoastEx(MOTORS, RESET_NONE);
+	Release(moveMutex);
+}
+void rev_left(byte thePwr){
+	Acquire(moveMutex);
+	OnRev(MOTOR_LEFT, thePwr);
+	CoastEx(MOTORS, RESET_NONE);
+	Release(moveMutex);
+}
+void rev_right(byte thePwr){
+	Acquire(moveMutex);
+	OnRev(MOTOR_RIGHT, thePwr);
+	CoastEx(MOTORS, RESET_NONE);
+	Release(moveMutex);
+} 
+
+void fwd_right(byte thePwr){
+	Acquire(moveMutex);
+	OnFwd(MOTOR_RIGHT, thePwr);
+	CoastEx(MOTORS, RESET_NONE);
+	Release(moveMutex);
+}
+void fwd_left(byte thePwr){
+	Acquire(moveMutex);
+	OnFwd(MOTOR_LEFT, thePwr);
+	CoastEx(MOTORS, RESET_NONE);
+	Release(moveMutex);
+}
+void fwd_sync_left(byte thePwr,byte theTurnRatio){
+	Acquire(moveMutex);
+	OnFwdSync(MOTORS,thePwr, -theTurnRatio);
+	CoastEx(MOTORS, RESET_NONE);
+	Release(moveMutex);
+}
+
+void fwd_sync_right(byte thePwr,byte theTurnRatio){
+	Acquire(moveMutex);
+	OnFwdSync(MOTORS,thePwr, theTurnRatio);
+	CoastEx(MOTORS, RESET_NONE);
+	Release(moveMutex);
+}
+void rev_sync_right(byte thePwr, byte theTurnRatio){
+	Acquire(moveMutex);
+	OnRevSync(MOTORS,thePwr, theTurnRatio);
+	CoastEx(MOTORS, RESET_NONE);
+	Release(moveMutex);
+}
+
+void rev_sync_left(byte thePwr, byte theTurnRatio){
+	Acquire(moveMutex);
+	OnRevSync(MOTORS,thePwr, -theTurnRatio);
+	CoastEx(MOTORS, RESET_NONE);
+	Release(moveMutex);
+}
+void fwd_time(byte thePwr,int theTime){
+	Acquire(moveMutex);
+	OnFwdSync(MOTORS,thePwr,0);
+	Wait(theTime);
+	//Off(MOTORS);
+	//CoastEx(MOTORS, RESET_NONE);
+	//Wait(1);
+	Release(moveMutex);
+}
+void rev_time_left(byte thePwr,byte theTurnRatio, int theTime){
+	Acquire(moveMutex);
+	OnRevSync(MOTORS,thePwr, -theTurnRatio);
+	Wait(theTime);
+	//Off(MOTORS);
+	CoastEx(MOTORS, RESET_NONE);
+	Wait(1);
+	Release(moveMutex);
+}
+void rev_time_right(byte thePwr,byte theTurnRatio, int theTime){
+	Acquire(moveMutex);
+	OnRevSync(MOTORS,thePwr,theTurnRatio);
+	Wait(theTime);
+	//Off(MOTORS);
+	CoastEx(MOTORS, RESET_NONE);
+	Wait(1);
+	Release(moveMutex);
+} 
+void fwd_time_left(byte thePwr,byte theTurnRatio, int theTime){
+	Acquire(moveMutex);
+	OnFwdSync(MOTORS,thePwr, -theTurnRatio);
+	Wait(theTime);
+	//Off(MOTORS);
+	CoastEx(MOTORS, RESET_NONE);
+	Wait(1);
+	Release(moveMutex);
+}
+void fwd_time_right(byte thePwr,byte theTurnRatio, int theTime){
+	Acquire(moveMutex);
+	OnFwdSync(MOTORS,thePwr,theTurnRatio);
+	Wait(theTime);
+	//Off(MOTORS);
+	CoastEx(MOTORS, RESET_NONE);
+	Wait(1);
+	Release(moveMutex);
+}
+
+void motors_off(){
+	Acquire(moveMutex);
+	OffEx(MOTORS, RESET_NONE);
+	Wait(1);
+	Release(moveMutex);	
+}
+void motors_reset_all(){
+	Acquire(moveMutex);
+	OffEx(MOTORS, RESET_ALL);
+	//CoastEx(MOTORS, RESET_ALL);
+	Wait(1);
+	Release(moveMutex);	
+}
+
+#endif

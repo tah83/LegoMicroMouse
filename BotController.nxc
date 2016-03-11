@@ -1,0 +1,378 @@
+#ifndef	_BOTCONTROLLER_NXC_
+#define _BOTCONTROLLER_NXC_
+
+#include "WallCheck.nxc";
+#include "MoveControl.nxc";
+#include "Maze.nxc";
+
+//define cell walls
+//use the other defines for walls in cell
+//this file has access to cell.nxc even though its not included directly. implicitly through maze.nxc
+//in Cell.nxc
+/*
+#define BOT_CELL_WALL_NORTH		1
+#define BOT_CELL_WALL_EAST		2
+#define BOT_CELL_WALL_SOUTH		4
+#define BOT_CELL_WALL_WEST		8
+*/
+
+//maintain direction
+#define BOT_DIR_INVALID	0
+#define BOT_DIR_NORTH	1
+#define BOT_DIR_EAST	2
+#define BOT_DIR_SOUTH	4
+#define BOT_DIR_WEST	8
+//default/starting direction
+byte botDir = BOT_DIR_NORTH;
+//global vars. bots current x,y pos in maze
+byte botX = 0, botY = 0;
+byte botStartX, botStartY;
+byte botMoveCount;
+
+//function prototypes
+/*sets the bots start x and y position to 0,0
+  sets direction to north
+  set move count to 1 for first cell
+*/
+void bot_initialize();
+/*uses sensors and drive bot around, trying to stay in the maze
+ does not solve maze. just tests moving in maze
+*/
+void bot_move_test();
+/*check sensors, update the wall array for the current cell	
+*/
+void bot_update_walls();
+/*flood the maze with new distance values
+ sets distance values in the two dimensional maze arrays
+*/
+void bot_flood_maze();
+/* tells the bot to move to the next cell
+checks if it has a valid move, if not, it will call bot_get_next_move
+*/
+void bot_move_to_next_cell();
+/*called after a completed move, based on direction bot moved
+the bots x,y position will be updated
+*/
+void bot_update_xy();
+/*called after finding the goal.
+if goal was to get to the center, the new goal is now set to get back to the start
+*/
+void bot_change_goal();
+/*calls maze_print() to print the two dimensionaly array to the LCD
+then writes the bots position in the maze on the LCD with a "B"
+also writes the bots started position with "S"
+*/
+void bot_print_maze();
+//
+//void bot_set_speed();
+//
+//byte bot_get_speed();
+/*checks for next valid move, and returns the directions as a byte
+Returns: byte
+*/
+byte bot_get_next_move();
+/*check for the absolute direction to the left of the bot, if faceing north, then return West
+if facing west, then  return south...
+return: byte
+*/
+byte bot_get_left_dir();
+/*return the absolute direction to the right of the bot
+return: byte
+*/
+byte bot_get_right_dir();
+/*return the absolute direction behind the bot
+return: byte
+*/
+byte bot_get_rev_dir();
+/*return the x posistion of the bot
+retrun: byte
+*/
+byte bot_get_x_pos();
+/*return the y position of the bot
+return: byte
+*/
+byte bot_get_y_pos();
+/*bool check if the bots x,y position is the same as the goals x,y
+return: bool
+*/
+bool bot_is_at_goal();
+
+void bot_initialize(){
+	maze_initialize();
+    botX = 0;
+    botY = 0;
+    botDir = BOT_DIR_NORTH;
+	botMoveCount = 1;
+}
+//set walls, the bot sees in each cell it traverses
+void  bot_update_walls(){
+	//give sensors some time to get new values;
+	Wait(100);
+	byte theLeftWall = 0, theFrontWall = 0, theRightWall = 0;
+	bool theLeftWallExists = is_wall_left();
+	bool theFrontWallExists = is_wall_front();
+	bool theRightWallExists = is_wall_right();	
+	//motors_off();		
+	//if(get_front_distance() < 10)
+	//	sync_rev_deg(moveTurnSpeed,50);
+		
+	//if cell not explored. set explored
+	if(!maze_is_cell_explored(botX,botY))
+		maze_set_cell_explored(botX,botY);
+
+	//set apporpiate walls N, E, S, W
+	if(botDir == BOT_DIR_NORTH){
+		if(theLeftWallExists)
+			theLeftWall = CELL_WALL_WEST;
+		if(theFrontWallExists)
+			theFrontWall = CELL_WALL_NORTH;
+		if(theRightWallExists)
+			theRightWall = CELL_WALL_EAST;
+	}
+	else if(botDir == BOT_DIR_EAST){
+		if(theLeftWallExists)
+			theLeftWall = CELL_WALL_NORTH;
+		if(theFrontWallExists)
+			theFrontWall = CELL_WALL_EAST;
+		if(theRightWallExists)
+			theRightWall = CELL_WALL_SOUTH;
+	}
+	else if(botDir == BOT_DIR_SOUTH){
+		if(theLeftWallExists)
+			theLeftWall = CELL_WALL_EAST;
+		if(theFrontWallExists)
+			theFrontWall = CELL_WALL_SOUTH;
+		if(theRightWallExists)
+			theRightWall = CELL_WALL_WEST;
+	}
+	else if(botDir == BOT_DIR_WEST){
+		if(theLeftWallExists)
+			theLeftWall = CELL_WALL_SOUTH;
+		if(theFrontWallExists)
+			theFrontWall = CELL_WALL_WEST;
+		if(theRightWallExists)
+			theRightWall = CELL_WALL_NORTH;
+	}
+	//set the walls. bits logic OR together.
+	maze_set_cell_walls(botX,botY,theLeftWall | theFrontWall | theRightWall);
+}
+void bot_flood_maze(){
+	maze_flood_fill();
+}
+//look at neighbor cell distance values. take the first cell with
+//a lower value than current cell, if the next neighbor to examine has a lower value
+//set that as the next dir
+byte bot_get_next_move(){
+	//set current cell value for comparison
+	byte theBestCell = maze_get_cell_value(botX,botY);
+	//set best direction as current direction
+	byte theBestDir = BOT_DIR_INVALID;
+	//byte theNorthCell = 255,theEastCell = 255,theSouthCell = 255,theWestCell =255;
+	//look at neighbor cell distance values
+	//check front cell first
+	/*
+	//if(botDir == get_bot_fwd_dir()){
+	if(botDir == NORTH && !cell_is_wall_north(botX,botY)
+	//}
+	*/
+	//check north cell
+	if(!cell_is_wall_north(botX,botY) && maze_is_xy_in_boundry(botX,botY+1)
+	&& theBestCell > maze_get_cell_value(botX,botY+1)){
+		theBestCell = maze_get_cell_value(botX,botY+1);
+		theBestDir = BOT_DIR_NORTH;
+	}
+	//check east cell
+	if(!cell_is_wall_east(botX,botY) && maze_is_xy_in_boundry(botX+1,botY)
+	&& theBestCell > maze_get_cell_value(botX+1,botY)){
+		theBestCell = maze_get_cell_value(botX+1,botY);
+		theBestDir = BOT_DIR_EAST;
+	}
+	//check south cell
+	if(!cell_is_wall_south(botX,botY) && maze_is_xy_in_boundry(botX,botY-1)
+	&& theBestCell > maze_get_cell_value(botX,botY-1)){
+		theBestCell = maze_get_cell_value(botX,botY-1);
+		theBestDir = BOT_DIR_SOUTH;
+	}
+	//check west cell
+	if(!cell_is_wall_west(botX,botY) && maze_is_xy_in_boundry(botX-1,botY)
+	&& theBestCell > maze_get_cell_value(botX-1,botY)){
+		theBestCell = maze_get_cell_value(botX-1,botY);
+		theBestDir = BOT_DIR_WEST;
+	}
+	//if bot doesnt have a valid move. flood the maze with new values
+	if(theBestDir == BOT_DIR_INVALID){
+		maze_flood_fill();
+	}
+	return theBestDir;
+}
+//move to next cell
+//update bots direction
+//for a larger maze, we should have a structure to keep track of the bots path, and forks in the maze
+//
+void bot_move_to_next_cell(){
+	byte theDir = BOT_DIR_INVALID;// = bot_get_next_move();
+	//if bot didnt have a valid move. maze will re-flood.
+	//this will do a check for next move at least once. hopefully at most only twice
+	//could the bot get to a spot in the maze where neighbor values are the same or greater than the current cell?
+	while(theDir == BOT_DIR_INVALID)
+		theDir = bot_get_next_move();
+	//if best direction is current directions
+	if(theDir == botDir)
+		move_to_next_cell();
+	//rotate right move to next cell
+	else if(theDir == bot_get_right_dir()){
+		move_rotate(MOVE_DIR_RIGHT);
+		move_to_next_cell();
+	}
+	//rotate left move to next cell
+	else if(theDir == bot_get_left_dir()){
+		move_rotate(MOVE_DIR_LEFT);
+		move_to_next_cell();
+	}
+	//u-turn go back
+	else{
+		move_rotate(MOVE_DIR_OPPOSITE);
+		move_to_next_cell();
+	}
+	botDir = theDir;
+	bot_update_xy();
+	botMoveCount++;	
+}
+void bot_update_xy(){
+	if(botDir == BOT_DIR_NORTH)
+		botY = botY+1;
+	else if(botDir == BOT_DIR_EAST)
+		botX = botX+1;
+	else if(botDir == BOT_DIR_SOUTH)
+		botY = botY-1;
+	else if(botDir == BOT_DIR_WEST)
+		botX = botX-1;
+}
+byte bot_get_front_dir(){
+	byte theFrontDir = 0;
+	if(botDir == BOT_DIR_NORTH)
+		theFrontDir = BOT_DIR_NORTH;
+	else if(botDir == BOT_DIR_EAST)
+		theFrontDir = BOT_DIR_EAST;
+	else if(botDir == BOT_DIR_SOUTH)
+		theFrontDir = BOT_DIR_SOUTH;
+	else if(botDir == BOT_DIR_WEST)
+		theFrontDir = BOT_DIR_WEST;	
+	return theFrontDir;
+}
+//get the direction to the right of current direction
+byte bot_get_right_dir(){
+	byte theRightDir = 0;
+	if(botDir == BOT_DIR_NORTH)
+		theRightDir = BOT_DIR_EAST;
+	else if(botDir == BOT_DIR_EAST)
+		theRightDir = BOT_DIR_SOUTH;
+	else if(botDir == BOT_DIR_SOUTH)
+		theRightDir = BOT_DIR_WEST;
+	else if(botDir == BOT_DIR_WEST)
+		theRightDir = BOT_DIR_NORTH;	
+	return theRightDir;
+}
+//get dir left of current
+byte bot_get_left_dir(){
+	byte theLeftDir = 0;
+	if(botDir == BOT_DIR_NORTH)
+		theLeftDir = BOT_DIR_WEST;
+	else if(botDir == BOT_DIR_EAST)
+		theLeftDir = BOT_DIR_NORTH;
+	else if(botDir == BOT_DIR_SOUTH)
+		theLeftDir = BOT_DIR_EAST;
+	else if(botDir == BOT_DIR_WEST)
+		theLeftDir = BOT_DIR_SOUTH;
+	return theLeftDir;
+}
+//change the goal
+//called after goal is found.
+//if goal was to get to center. goal is now the start position
+void bot_change_goal(){
+	botStartX = maze_get_target_x();
+	botStartY = maze_get_target_y();
+	maze_change_goal();	
+}
+
+bool bot_is_at_goal(){
+     //check if goal is center, or back to start
+     byte theTargetX,theTargetY;
+	 theTargetX = maze_get_target_x();
+	 theTargetY = maze_get_target_y();
+     if(botX == theTargetX && botY == theTargetY)
+         return true;
+     else
+         return false;
+}
+
+byte bot_get_x_pos(){
+     return botX;
+}
+byte bot_get_y_pos(){
+     return botY;
+}
+
+void bot_move_test(){
+  //case: no front wall and there is left side and right side wall
+  //result: move forward
+	if(is_front_open()){// && !is_left_open() && !is_right_open() ){
+		move_to_next_cell();
+		//Wait(300);
+	}
+	//case: wall in front and wall on right. no wall on left.
+	//result: turn 90 degrees left
+	else if(is_wall_front() && is_wall_right() && is_left_open()){
+		move_rotate(MOVE_DIR_LEFT);
+		//Wait(200);
+	}
+	//case: wall in front and wall on left. no wall on right.
+	//result: turn 90 degrees right
+	else if(is_wall_front() && is_wall_left() && is_right_open()){
+		move_rotate(MOVE_DIR_RIGHT);
+		// Wait(200);
+	}
+	//case: wall on all sides.
+	//result: turn 180
+	else if(is_wall_front() && is_wall_right() && is_wall_left()){
+		move_rotate(MOVE_DIR_OPPOSITE);
+	}
+	ClearScreen();
+	move_print_info();
+	//Wait(100);
+}
+// print bots position in the maze. as its moving through the maze
+//print B for bots position in the maze 
+//print S for Start spot in the maze
+void bot_print_maze(){
+	string theDir = "";
+	byte thePosX, thePosY;
+	//print the maze as the bot sees it so far
+	maze_print();	
+	//print the Start cell
+	thePosX = botStartX+botStartX*18;
+	thePosY = (LCD_LINE5)+botStartY*8;
+	TextOut(thePosX,thePosY,"S");
+	//print the position of the bot in the maze. or where it thinks it is
+	thePosX = botX+botX*18;
+	thePosY = (LCD_LINE5)+botY*8;
+	TextOut(thePosX,thePosY,"B");
+	//print (x,y) and bots direction
+	TextOut(0, LCD_LINE7,"(");
+	NumOut(8,LCD_LINE7,botX);
+	TextOut(16,LCD_LINE7,",");
+	NumOut(24,LCD_LINE7,botY);
+	TextOut(32,LCD_LINE7,")");
+	if(botDir == BOT_DIR_NORTH)
+		theDir = "N";
+	else if(botDir == BOT_DIR_EAST)
+		theDir = "E";
+	else if(botDir == BOT_DIR_SOUTH)
+		theDir = "S";
+	else if(botDir == BOT_DIR_WEST)
+		theDir = "W";
+	TextOut(40,LCD_LINE7,theDir);
+	NumOut(48,LCD_LINE7, botMoveCount);
+}
+
+#endif
